@@ -1,3 +1,4 @@
+import os
 import math
 import time 
 import torch
@@ -136,13 +137,15 @@ class Weight_Parallelized_Tensor(nn.Module):
             return Weight_Parallelized_Tensor([p-q for p,q in zip(self.tensor, a.tensor)], rank_list=self.rank_list, backend=self.backend, master_group=self.master_group, list_of_master_nodes=self.list_of_master_nodes, rank=self.rank, gpu_id=self.gpu_id)
 
 def decide_gpu_device(ws, backend, gpu_id):
-    if backend == 'gloo':
-        if torch.cuda.device_count() < ws:
-            return f'cuda:{gpu_id}'
-        else:
-            return f'cuda:{dist.get_rank()}'
-    else:
-        return f'cuda:{gpu_id}'
+    loc_rank = int(os.environ.get("LOCAL_RANK", 0))
+    return f'cuda:{loc_rank}'
+    # if backend == 'gloo':
+    #     if torch.cuda.device_count() < ws:
+    #         return f'cuda:{gpu_id}'
+    #     else:
+    #         return f'cuda:{dist.get_rank()}'
+    # else:
+    #     return f'cuda:{gpu_id}'
 
 
 class Parallelized_Model(nn.Module):
