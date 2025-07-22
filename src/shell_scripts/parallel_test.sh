@@ -37,7 +37,7 @@ submit_job() {
     sbatch \
       --partition=${partition} \
       --nodes="$nodes" \
-      --ntasks-per-node="$tpn" \
+      --ntasks-per-node="${tpn}" \
       --gres=gpu:"${tpn}" \
       --job-name="${name}" \
       --output="log_files/${name}.out" \

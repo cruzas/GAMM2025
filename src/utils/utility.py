@@ -374,13 +374,13 @@ def prepare_distributed_environment(rank=None, master_addr=None, master_port=Non
 
         os.environ["MASTER_PORT"] = port
         print(f"Dist initialized before process group? {dist.is_initialized()}")
-        dist.init_process_group(
-            backend="nccl",
-            init_method=f"tcp://{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}",
-            world_size=world_size,
-            rank=rank,
-        )
-        # dist.init_process_group(backend="nccl")
+        # dist.init_process_group(
+        #     backend="nccl",
+        #     init_method=f"tcp://{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}",
+        #     world_size=world_size,
+        #     rank=rank,
+        # )
+        dist.init_process_group(backend="nccl")
         print(f"Dist initialized after init process group? {dist.is_initialized()} with world size {dist.get_world_size()}")
     else: # we are on a PC
         os.environ['MASTER_ADDR'] = master_addr
