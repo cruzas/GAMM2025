@@ -1,24 +1,27 @@
 #!/bin/bash
-#SBATCH --account=c24
-#SBATCH --time=00:30:00
-#SBATCH --ntasks-per-core=1
-#SBATCH --ntasks-per-node=1
+
 #SBATCH --cpus-per-task=1
-#SBATCH --gres=gpu:1
+#SBATCH --ntasks-per-core=1
 #SBATCH --hint=nomultithread
 #SBATCH --constraint=gpu
-#SBATCH --partition=debug
 #SBATCH --exclusive
 
-module load daint-gpu
+source ~/.slurm_env
+#SBATCH --account=$SLURM_ACCOUNT
 
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-export NCCL_DEBUG=INFO
-export NCCL_IB_HCA=ipogif0
-export NCCL_IB_CUDA_SUPPORT=1
+# Load required modules
+module load cray/23.12
+# module load cray-python/3.11.5
 
-RUNPATH=/scratch/snx3000/scruzale/ML_APTS/
-cd $RUNPATH || exit
+# Set environment variables
+if [ -z "$SLURM_CPUS_PER_TASK" ]; then
+    export OMP_NUM_THREADS=1
+else
+    export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+fi
+export NCCL_DEBUG=ERROR   # Set to INFO for debugging
+export NCCL_P2P_DISABLE=0 # Enable peer-to-peer communication
+export NCCL_SHM_DISABLE=0 # Enable shared memory communication
 
 # Retrieve parameters from the command line
 optimizer=$1
@@ -27,17 +30,29 @@ learning_rate=$3
 trial_number=$4
 epochs=$5
 dataset=$6
+world_size=$7
 
-# Display parameters (for debugging)
-echo "Optimizer: $optimizer"
-echo "Batch size: $batch_size"
-echo "Learning rate: $learning_rate"
-echo "Trial number: $trial_number"
-echo "Epochs: $epochs"
-echo "Dataset: $dataset"
+echo "Optimizer:    $optimizer"
+echo "Batch size:   $batch_size"
+echo "Learning rate:$learning_rate"
+echo "Trial no.:    $trial_number"
+echo "Epochs:       $epochs"
+echo "Dataset:      $dataset"
+echo "World size:   $world_size"
 
-echo "Activating llms $(date)"
+echo "Activating llms at $(date)"
 source activate llms
-echo "Calling python script $(date)"
-srun python3 -u src/parallel_test.py --optimizer "$optimizer" --batch_size "$batch_size" --lr "$learning_rate" --trial_number "$trial_number" --epochs "$epochs" --dataset "$dataset"
-echo "Test done $(date)"
+
+python -c "import diffdist; print('diffdist is working')"
+
+echo "Launching python at $(date)"
+cd ../
+srun python -u parallel_test.py \
+     --optimizer "$optimizer" \
+     --batch_size "$batch_size" \
+     --lr "$learning_rate" \
+     --trial_number "$trial_number" \
+     --epochs "$epochs" \
+     --dataset "$dataset"
+
+echo "Run complete at $(date)"

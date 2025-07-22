@@ -1,61 +1,67 @@
 #!/bin/bash
+set -euo pipefail
 
-# Define the arrays for each parameter
-optimizers=("APTS")
-batch_sizes=(200)
-epochs=25
-nodes_SGD_Adam=(2)
+GPUS_PER_NODE=4    # GPUs per node
+optimizers=(APTS)
+batch_sizes=(10000)#(200)
+epochs=1 #25
+nodes_SGD_Adam=(2)  # total GPUs desired
 nodes_APTS=(8)
-trial_numbers=(3)
-datasets=("cifar10")
+trial_numbers=(1)
+datasets=(cifar10)
 
 SGD_cifar10_lr=0.01
 Adam_cifar10_lr=0.001
 
-submit_job() {
-    local optimizer=$1
-    local batch_size=$2
-    local dataset=$3
-    local trial_number=$4
-    local learning_rate=$5
-    local nodes=$6
+partition="debug"
+time="00:10:00"
 
-    job_name="${optimizer}_nl6_${dataset}_${batch_size}_${learning_rate}_${epochs}_${nodes}_t${trial_number}"
-    error_file="${job_name}.err"
-    output_file="${job_name}.out"
-
-    sbatch --nodes="$nodes" --job-name="$job_name" --output="$output_file" --error="$error_file" parallel_test.job "$optimizer" "$batch_size" "$learning_rate" "$trial_number" "$epochs" "$dataset"
+# choose smallest #nodes so world_size % nodes == 0 and (world_size/nodes) ≤ GPUS_PER_NODE
+calc_nodes() {
+    local world_size=$1
+    for n in $(seq 1 "$world_size"); do
+        local tpn=$(( world_size / n ))
+        if (( world_size % n == 0 && tpn <= GPUS_PER_NODE )); then
+            echo "$n"
+            return
+        fi
+    done
+    echo "$world_size"
 }
 
-# Iterate over each combination of parameters
-for optimizer in "${optimizers[@]}"
-do
-    for batch_size in "${batch_sizes[@]}"
-    do   
-        for dataset in "${datasets[@]}"
-        do
-            for trial_number in "${trial_numbers[@]}"
-            do
-                if [ "$optimizer" == "SGD" ] || [ "$optimizer" == "Adam" ]
-                then
-                    for nodes in "${nodes_SGD_Adam[@]}"
-                    do
-                        if [ "$optimizer" == "SGD" ] && [ "$dataset" == "cifar10" ]
-                        then
-                            learning_rate="$SGD_cifar10_lr"
-                        else
-                            learning_rate="$Adam_cifar10_lr"
-                        fi
-                        submit_job "$optimizer" "$batch_size" "$dataset" "$trial_number" "$learning_rate" "$nodes"
-                    done
-                else
-                    for nodes in "${nodes_APTS[@]}"
-                    do
-                        learning_rate=0.001
-                        submit_job "$optimizer" "$batch_size" "$dataset" "$trial_number" "$learning_rate" "$nodes"
-                    done
-                fi
-            done
-        done
+submit_job() {
+    local opt=$1 bs=$2 ds=$3 trial=$4 lr=$5 world_size=$6
+    local nodes=$(calc_nodes "$world_size")
+    local tpn=$(( world_size / nodes ))
+    local name="${opt}_n${nodes}x${tpn}_${ds}_${bs}_lr${lr}_${epochs}_t${trial}"
+    sbatch \
+      --partition=${partition} \
+      --nodes="$nodes" \
+      --ntasks-per-node="$tpn" \
+      --gres=gpu:"${tpn}" \
+      --job-name="${name}" \
+      --output="log_files/${name}.out" \
+      --error="log_files/${name}.err" \
+      --time="${time}" \
+      parallel_test.job \
+         "$opt" "$bs" "$lr" "$trial" "$epochs" "$ds" "$world_size"
+}
+
+for opt in "${optimizers[@]}"; do
+  for bs in "${batch_sizes[@]}"; do
+    for ds in "${datasets[@]}"; do
+      for trial in "${trial_numbers[@]}"; do
+        if [[ "$opt" == "SGD" || "$opt" == "Adam" ]]; then
+          for world in "${nodes_SGD_Adam[@]}"; do
+            [[ "$opt" == "SGD" && "$ds" == "cifar10" ]] && lr=$SGD_cifar10_lr || lr=$Adam_cifar10_lr
+            submit_job "$opt" "$bs" "$ds" "$trial" "$lr" "$world"
+          done
+        else
+          for world in "${nodes_APTS[@]}"; do
+            submit_job "$opt" "$bs" "$ds" "$trial" 0.001 "$world"
+          done
+        fi
+      done
     done
+  done
 done
