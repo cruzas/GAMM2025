@@ -348,20 +348,39 @@ def find_free_port():
 def prepare_distributed_environment(rank=None, master_addr=None, master_port=None, world_size=None):
     device_id = 0
     if rank is None and master_addr is None and master_port is None and world_size is None: # we are on a cluster
-        print(f'Should be initializing {os.environ["SLURM_NNODES"]} nodes')
-        ## Execute code on a cluster
-        os.environ["MASTER_PORT"] = find_free_port()# "29501"
-        print(f"Using port: {os.environ["MASTER_PORT"]}")
-        os.environ["WORLD_SIZE"] = os.environ["SLURM_NNODES"]
-        os.environ["LOCAL_RANK"] = "0"
-        os.environ["RANK"] = os.environ["SLURM_NODEID"]
-        node_list = os.environ["SLURM_NODELIST"]
+        rank       = int(os.environ["SLURM_PROCID"])
+        if rank == 0:
+            print(f'Should be initializing {os.environ["SLURM_NNODES"]} nodes')
+        world_size = int(os.environ["SLURM_NNODES"])
         master_node = subprocess.getoutput(
-            f"scontrol show hostname {node_list} | head -n1"
-        )
+            "scontrol show hostname $SLURM_NODELIST | head -n1"
+        ).strip()
         os.environ["MASTER_ADDR"] = master_node
+        os.environ["WORLD_SIZE"]    = str(world_size)
+        os.environ["RANK"]          = str(rank)
+
+        port_file = "port.txt"
+        if rank == 0:
+            port = find_free_port()
+            with open(port_file, "w") as f:
+                f.write(str(port))
+            print("Rank 0 wrote to port file.")
+        else:
+            # wait for rank‑0 to write the port
+            while not os.path.exists(port_file):
+                time.sleep(0.1)
+            with open(port_file) as f:
+                port = f.read().strip()
+
+        os.environ["MASTER_PORT"] = port
         print(f"Dist initialized before process group? {dist.is_initialized()}")
-        dist.init_process_group(backend="nccl")
+        dist.init_process_group(
+            backend="nccl",
+            init_method=f"tcp://{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}",
+            world_size=world_size,
+            rank=rank,
+        )
+        # dist.init_process_group(backend="nccl")
         print(f"Dist initialized after init process group? {dist.is_initialized()} with world size {dist.get_world_size()}")
     else: # we are on a PC
         os.environ['MASTER_ADDR'] = master_addr

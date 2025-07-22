@@ -39,9 +39,7 @@ def prepare_distributed_environment(rank=None, master_addr=None, master_port=Non
     if rank is None and master_addr is None and master_port is None and world_size is None: # we are on a cluster
         print(f'Should be initializing {os.environ["SLURM_NNODES"]} nodes')
         ## Execute code on a cluster
-        port = find_free_port()
-        print(f"Using port: {port}")
-        os.environ["MASTER_PORT"] = port#"29501"
+        os.environ["MASTER_PORT"] = "29501" 
         os.environ["WORLD_SIZE"] = os.environ["SLURM_NNODES"]
         os.environ["LOCAL_RANK"] = "0"
         os.environ["RANK"] = os.environ["SLURM_NODEID"]

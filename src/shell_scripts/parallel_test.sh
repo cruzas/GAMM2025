@@ -3,7 +3,7 @@ set -euo pipefail
 
 GPUS_PER_NODE=4    # GPUs per node
 optimizers=(APTS)
-batch_sizes=(10000) #(200)
+batch_sizes=(200) #(200)
 epochs=1 #25
 nodes_SGD_Adam=(2)  # total GPUs desired
 nodes_APTS=(8)
