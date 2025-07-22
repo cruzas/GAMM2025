@@ -33,6 +33,7 @@ submit_job() {
     local opt=$1 bs=$2 ds=$3 trial=$4 lr=$5 world_size=$6
     local nodes=$(calc_nodes "$world_size")
     local tpn=$(( world_size / nodes ))
+    echo "Tasks per node: ${tpn}"
     local name="${opt}_n${nodes}x${tpn}_${ds}_${bs}_lr${lr}_${epochs}_t${trial}"
     sbatch \
       --partition=${partition} \

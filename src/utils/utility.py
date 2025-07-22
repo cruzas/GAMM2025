@@ -1,6 +1,8 @@
 # External libraries
 import os  
 import torch
+import random
+import datetime
 import argparse
 import subprocess
 import numpy as np
@@ -345,58 +347,52 @@ def find_free_port():
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return str(s.getsockname()[1])  
 
-def prepare_distributed_environment(rank=None, master_addr=None, master_port=None, world_size=None):
-    device_id = 0
-    if rank is None and master_addr is None and master_port is None and world_size is None: # we are on a cluster
-        rank       = int(os.environ["SLURM_PROCID"])
+def get_shared_random_master_port(master_port=None, seed=42):
+    if master_port is not None:
+        return str(master_port)
+    random.seed(seed)
+    return str(random.randint(0, 6500))
+
+def detect_environment():
+    if 'SLURM_JOB_ID' in os.environ:
+        return "cluster"
+    hostname = socket.gethostname()
+    if "cluster_name" in hostname:
+        return "cluster"
+    return "local"
+
+def prepare_distributed_environment(rank=None, master_addr=None, master_port=None, world_size=None, is_cuda_enabled=torch.cuda.is_available()):
+    if dist.is_initialized():
+        return
+    
+    backend = 'nccl' if is_cuda_enabled else 'gloo'
+    comp_env = detect_environment()
+    env_vars = {}
+    multi_gpu = False
+    if comp_env != 'local':  # SLURM cluster environment
+        multi_gpu = is_cuda_enabled and torch.cuda.device_count() > 1
+        env_vars['MASTER_PORT'] = get_shared_random_master_port(master_port, seed=12345) # TODO: Currently random so may not always be a free port. Whatever strategy you choose, make sure it is the same across all processes.
+        env_vars['MASTER_ADDR'] = subprocess.getoutput(f"scontrol show hostname {os.environ.get('SLURM_NODELIST')} | head -n1")
+        env_vars['WORLD_SIZE'] = os.environ.get('SLURM_NTASKS', '1')
+        env_vars['RANK'] = os.environ.get('SLURM_PROCID', '0') if multi_gpu else os.environ.get('SLURM_NODEID', '0')
+        env_vars['LOCAL_RANK'] = os.environ.get('SLURM_LOCALID', '0')
+        
+        if is_cuda_enabled: torch.cuda.set_device(int(os.environ['SLURM_LOCALID']))
+        rank = int(env_vars['RANK'])
+        world_size = int(env_vars['WORLD_SIZE'])
+        
         if rank == 0:
-            print(f'Should be initializing {os.environ["SLURM_NNODES"]} nodes')
-        world_size = int(os.environ["SLURM_NNODES"])
-        master_node = subprocess.getoutput(
-            "scontrol show hostname $SLURM_NODELIST | head -n1"
-        ).strip()
-        os.environ["MASTER_ADDR"] = master_node
-        os.environ["WORLD_SIZE"]    = str(world_size)
-        os.environ["RANK"]          = str(rank)
+            print(f"On cluster environment with world size={world_size}")
+            if multi_gpu: print("Multi-GPU environment detected.")
+    else:  # Local environment
+        env_vars['MASTER_ADDR'] = master_addr or "localhost"
+        env_vars['MASTER_PORT'] = master_port or find_free_port()
+        if sys.platform == 'darwin':
+            env_vars["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
-        port_file = "port.txt"
-        if rank == 0:
-            port = find_free_port()
-            with open(port_file, "w") as f:
-                f.write(str(port))
-            print("Rank 0 wrote to port file.")
-        else:
-            # wait for rank‑0 to write the port
-            while not os.path.exists(port_file):
-                time.sleep(0.1)
-            with open(port_file) as f:
-                port = f.read().strip()
-
-        os.environ["MASTER_PORT"] = port
-        print(f"Dist initialized before process group? {dist.is_initialized()}")
-        # dist.init_process_group(
-        #     backend="nccl",
-        #     init_method=f"tcp://{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}",
-        #     world_size=world_size,
-        #     rank=rank,
-        # )
-        dist.init_process_group(backend="nccl")
-        print(f"Dist initialized after init process group? {dist.is_initialized()} with world size {dist.get_world_size()}")
-    else: # we are on a PC
-        os.environ['MASTER_ADDR'] = master_addr
-        os.environ['MASTER_PORT'] = master_port # A free port on the master node
-        # os.environ['WORLD_SIZE'] = str(world_size) # The total number of GPUs in the distributed job
-        # os.environ['RANK'] = '0' # The unique identifier for this process (0-indexed)
-        # os.environ["PL_TORCH_DISTRIBUTED_BACKEND"] = "gloo" # "nccl" or "gloo"
-        dist.init_process_group(backend='gloo', rank=rank, world_size=world_size)
-
-    device_id = dist.get_rank()
-    print(f"Device id: {device_id}")
-    # Setup RPC - assuming the RPC framework uses the same rank and world_size
-    # rpc_backend_options = dist.rpc.TensorPipeRpcBackendOptions()
-    # rpc_backend_options.init_method = f"tcp://{os.environ['MASTER_ADDR']}:{os.environ['MASTER_PORT']}"
-    # dist.rpc.init_rpc(f"worker{rank}", rank=rank, world_size=world_size, rpc_backend_options=rpc_backend_options)
-
+    # Update environment variables
+    os.environ.update(env_vars)
+    dist.init_process_group(backend=backend, rank=rank, world_size=world_size, timeout=datetime.timedelta(seconds=30))
 
         
 ### YOU SHOULD ADD ALL OPTIMIZERS YOU WISH TO SUPPORT IN THE FOLLOWING FUNCTIONS ###
@@ -459,7 +455,7 @@ def check_args_are_valid(args):
             raise ValueError('FOC must be either True or False.')
 
         if args.radius < 0 or args.radius > args.max_radius or args.radius < args.min_radius:
-            raise ValueError('Radius must be positive, \leq than max radius, and \geq than min radius.')
+            raise ValueError(f'Radius ({args.radius}) must be positive, <= than max radius ({args.max_radius}), and >= than min radius ({args.min_radius}).')
         if args.min_radius < 0 or args.min_radius > args.radius:
             raise ValueError('Minimum radius must be positive.')
         if args.max_radius < 0 or args.max_radius < args.radius:
