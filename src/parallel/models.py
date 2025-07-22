@@ -1,4 +1,5 @@
 import os
+loc_rank = int(os.environ.get("LOCAL_RANK", 0))
 import math
 import time 
 import torch
@@ -92,7 +93,7 @@ class Weight_Parallelized_Tensor(nn.Module):
         self.master_group = master_group
         self.list_of_master_nodes = list_of_master_nodes
         self.rank = rank
-        self.gpu_id = gpu_id
+        self.gpu_id = loc_rank
         
     def norm(self, p=2):
         if p == 2:
@@ -123,7 +124,10 @@ class Weight_Parallelized_Tensor(nn.Module):
             g3 = g1 @ g2
             g3 = g3.to(f'cpu' if self.backend == 'gloo' else f'cuda:{self.gpu_id}')
             if self.rank in self.list_of_master_nodes:
+                print(f"I am rank {self.rank} and my master group ranks are {dist.get_process_group_ranks(self.master_group)} ")
+                print(f"Rank {self.rank} sent g3 to cuda:{self.gpu_id}. Destination rank is {self.rank_list[0][0]}")
                 dist.reduce(tensor=g3, dst=self.rank_list[0][0], group=self.master_group, op=dist.ReduceOp.SUM)  # Sum the gradients on the master rank
+                print(f"Rank {self.rank} finished reducing...")
             return g3.item() # Multiply the internal models
         else:
             return Weight_Parallelized_Tensor([p*a for p in self.tensor], rank_list=self.rank_list, backend=self.backend, master_group=self.master_group, list_of_master_nodes=self.list_of_master_nodes, rank=self.rank, gpu_id=self.gpu_id)   # Multiply model by a scalar or tensor
@@ -139,14 +143,6 @@ class Weight_Parallelized_Tensor(nn.Module):
 def decide_gpu_device(ws, backend, gpu_id):
     loc_rank = int(os.environ.get("LOCAL_RANK", 0))
     return f'cuda:{loc_rank}'
-    # if backend == 'gloo':
-    #     if torch.cuda.device_count() < ws:
-    #         return f'cuda:{gpu_id}'
-    #     else:
-    #         return f'cuda:{dist.get_rank()}'
-    # else:
-    #     return f'cuda:{gpu_id}'
-
 
 class Parallelized_Model(nn.Module):
     '''
@@ -173,7 +169,7 @@ class Parallelized_Model(nn.Module):
 
 # Global model class
 class Weight_Parallelized_Model(nn.Module):
-    def __init__(self, layer_list, rank_list, gpu_id=0):
+    def __init__(self, layer_list, rank_list, gpu_id=loc_rank):
         '''
         - input_shape: Shape of the input tensor. This is used to generate a dummy tensor for the first layer and compute the output shape of every layer to adapt the send/recv in the pipeline.
         
@@ -191,10 +187,11 @@ class Weight_Parallelized_Model(nn.Module):
         self.rank_list = rank_list
         self.list_of_master_nodes = [self.rank_list[i][0] for i in range(len(self.rank_list))]
         self.master_group = dist.new_group(ranks=self.list_of_master_nodes)
-        self.gpu_id = gpu_id
+        self.gpu_id = loc_rank #gpu_id
+        print(f"I am rank {self.rank} and have gpu_id {loc_rank}")
         self.backend = dist.get_backend()
         self.shapes = [0]*len(layer_list)
-        self.gpu_device = decide_gpu_device(ws=dist.get_world_size(), backend=dist.get_backend(), gpu_id=0)
+        self.gpu_device = decide_gpu_device(ws=dist.get_world_size(), backend=dist.get_backend(), gpu_id=loc_rank)
         self.inputs = torch.tensor(()).to(self.gpu_device)  # each rank will store here the input of the next rank or layer (so the output of the current layer)  | -> this is needed for the backward pass
         self.outputs = torch.tensor(()).to(self.gpu_device)  # each rank will store here the output of the previous rank or layer (so its input)                  | -> this is needed for the backward pass
         self.grad_output = torch.tensor(()).to(self.gpu_device) # each rank will store here the gradient of the output of the current layer (so the gradient of the loss w.r.t. the output of the current layer) | -> this is needed for the backward pass
