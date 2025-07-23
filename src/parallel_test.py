@@ -121,10 +121,16 @@ def main(rank=None, master_addr=None, master_port=None, world_size=None):
                 layer_list[i] = ([lambda l=l: l, {}, (input_shape, output_shape)])
 
         elif dataset == 'mnist':
+            a = lambda sample: lambda samples: torch.cat([torch.tensor([samples], dtype=torch.int32), torch.tensor(sample)])          
             layer_list = [
-            (CNNPart1, {}, ((1, 28, 28), (64, 5, 5))),  # Adjust input and output shapes according to the actual sizes
-            (CNNPart2, {}, ((64, 5, 5), (128,))),        # Adjust input and output shapes
-            (CNNPart3, {}, ((128,), (10,)))              # Adjust input and output shapes
+                (NN1, {}, (a((1, 28, 28)), a((64,)))),
+                (NN2, {}, (a((64,)), a((64,)))),
+                (NN3, {}, (a((64,)), a((64,)))),
+                (NN4, {}, (a((64,)), a((64,)))),
+                (NN5, {}, (a((64,)), a((64,)))),
+                (NN6, {}, (a((64,)), a((64,)))),
+                (NN7, {}, (a((64,)), a((64,)))),
+                (NN8, {}, (a((64,)), a((10,)))),
             ]
 
         rank_list = [[r] for r in range(world_size)]

@@ -195,8 +195,10 @@ class Weight_Parallelized_Model(nn.Module):
         self.outputs = torch.tensor(()).to(self.gpu_device)  # each rank will store here the output of the previous rank or layer (so its input)                  | -> this is needed for the backward pass
         self.grad_output = torch.tensor(()).to(self.gpu_device) # each rank will store here the gradient of the output of the current layer (so the gradient of the loss w.r.t. the output of the current layer) | -> this is needed for the backward pass
         # layer_list = [[layer_class, {}] if type(layer_class) is not list and type(layer_class) is not tuple else [layer_class[0], layer_class[1]] for layer_class in layer_list]
+        # print(f"Layer list: {layer_list}")
         for i, ((layer_class, params, (input_shape, output_shape)), ranks) in enumerate(zip(layer_list, rank_list)): # Create each layer and assign it to the specified rank (device)
             self.shapes[i] = ((input_shape, output_shape))
+            # print(f"self.shapes[{i}]: {self.shapes[i]}")
             if self.rank in ranks:
                 if len(ranks) == 1: # No tensor parallelism (no horizontal slicing)
                     self.layer = layer_class(**params).to(self.gpu_device) # Initialize the layer with provided parameters
@@ -281,6 +283,8 @@ class Weight_Parallelized_Model(nn.Module):
                     self.outputs = self.layer(temp)#torch.cat((self.outputs, self.layer[0](temp)), dim=0)
                 else: # middle of the pipeline (between the first and the last layer)
                     shape_transfer.wait() # wait for the shape to be broadcasted
+                    # print(f"self.shapes[i][0]: {self.shapes[i][0]}")
+                    # print(f"self.shapes[i][0](chunk_shapes[c]): {self.shapes[i][0](chunk_shapes[c])}")
                     temp = torch.empty(*self.shapes[i][0](chunk_shapes[c]), device='cpu' if self.backend == 'gloo' else self.gpu_device, requires_grad=True)
                     temp,_ = distops.recv(tensor=temp, src=self.rank_list[i-1][0])
                     temp = temp.to(self.gpu_device)

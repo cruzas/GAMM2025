@@ -5,6 +5,64 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 
+class NN1(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(784, 64)
+    def forward(self, x):
+        # add a reshape to flatten the input
+        x = x.view(x.size(0), -1)  # Flatten the input
+        return F.relu(self.fc(x))
+ 
+class NN2(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(64, 64)
+    def forward(self, x):
+        return F.relu(self.fc(x))
+ 
+class NN3(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(64, 64)
+    def forward(self, x):
+        return F.relu(self.fc(x))
+ 
+class NN4(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(64, 64)
+    def forward(self, x):
+        return F.relu(self.fc(x))
+ 
+class NN5(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(64, 64)
+    def forward(self, x):
+        return F.relu(self.fc(x))
+ 
+class NN6(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(64, 64)
+    def forward(self, x):
+        return F.relu(self.fc(x))
+ 
+class NN7(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(64, 64)
+    def forward(self, x):
+        return F.relu(self.fc(x))
+ 
+class NN8(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc = nn.Linear(64, 10)
+    def forward(self, x):
+        return self.fc(x)  # logits (no softmax)
+
 # ResNet-18 implementation
 class BasicBlock(nn.Module):
     expansion = 1
