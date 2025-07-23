@@ -1,5 +1,5 @@
 import os
-loc_rank = int(os.environ.get("LOCAL_RANK", 0))
+loc_rank = int(os.environ.get('SLURM_LOCALID', '0'))
 import math
 import time 
 import torch
@@ -124,10 +124,10 @@ class Weight_Parallelized_Tensor(nn.Module):
             g3 = g1 @ g2
             g3 = g3.to(f'cpu' if self.backend == 'gloo' else f'cuda:{self.gpu_id}')
             if self.rank in self.list_of_master_nodes:
-                print(f"I am rank {self.rank} and my master group ranks are {dist.get_process_group_ranks(self.master_group)} ")
-                print(f"Rank {self.rank} sent g3 to cuda:{self.gpu_id}. Destination rank is {self.rank_list[0][0]}")
+                # print(f"I am rank {self.rank} and my master group ranks are {dist.get_process_group_ranks(self.master_group)} ")
+                # print(f"Rank {self.rank} sent g3 to cuda:{self.gpu_id}. Destination rank is {self.rank_list[0][0]}")
                 dist.reduce(tensor=g3, dst=self.rank_list[0][0], group=self.master_group, op=dist.ReduceOp.SUM)  # Sum the gradients on the master rank
-                print(f"Rank {self.rank} finished reducing...")
+                # print(f"Rank {self.rank} finished reducing...")
             return g3.item() # Multiply the internal models
         else:
             return Weight_Parallelized_Tensor([p*a for p in self.tensor], rank_list=self.rank_list, backend=self.backend, master_group=self.master_group, list_of_master_nodes=self.list_of_master_nodes, rank=self.rank, gpu_id=self.gpu_id)   # Multiply model by a scalar or tensor
@@ -141,7 +141,7 @@ class Weight_Parallelized_Tensor(nn.Module):
             return Weight_Parallelized_Tensor([p-q for p,q in zip(self.tensor, a.tensor)], rank_list=self.rank_list, backend=self.backend, master_group=self.master_group, list_of_master_nodes=self.list_of_master_nodes, rank=self.rank, gpu_id=self.gpu_id)
 
 def decide_gpu_device(ws, backend, gpu_id):
-    loc_rank = int(os.environ.get("LOCAL_RANK", 0))
+    loc_rank = int(os.environ.get('SLURM_LOCALID', '0'))
     return f'cuda:{loc_rank}'
 
 class Parallelized_Model(nn.Module):
@@ -188,7 +188,6 @@ class Weight_Parallelized_Model(nn.Module):
         self.list_of_master_nodes = [self.rank_list[i][0] for i in range(len(self.rank_list))]
         self.master_group = dist.new_group(ranks=self.list_of_master_nodes)
         self.gpu_id = loc_rank #gpu_id
-        print(f"I am rank {self.rank} and have gpu_id {loc_rank}")
         self.backend = dist.get_backend()
         self.shapes = [0]*len(layer_list)
         self.gpu_device = decide_gpu_device(ws=dist.get_world_size(), backend=dist.get_backend(), gpu_id=loc_rank)

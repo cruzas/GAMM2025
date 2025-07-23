@@ -52,12 +52,16 @@ def get_dataset(dataset):
 
 def main(rank=None, master_addr=None, master_port=None, world_size=None):
     args = parse_args()
-    print(f'args: {args}')
     optimizer_name, batch_size, learning_rate, trial_number, epochs, dataset = \
         args.optimizer, args.batch_size, args.lr, args.trial_number, args.epochs, args.dataset
     
     prepare_distributed_environment(rank, master_addr, master_port, world_size)
+    
+    rank = dist.get_rank()
     world_size = dist.get_world_size() if dist.is_initialized() else world_size
+
+    if rank == 0:
+        print(f'args: {args}')
 
     filename = f'{optimizer_name}_nl6_{dataset}_{batch_size}_{learning_rate}_{epochs}_{world_size}_t{trial_number}.npz'
     # Do experiment only if the filename doesn't already exist
@@ -83,7 +87,8 @@ def main(rank=None, master_addr=None, master_port=None, world_size=None):
         
         # Define the device 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')   
-        print(f"Device is {device}")
+        if rank == 0:
+            print(f"Device is {device}")
 
         # Instantiate the model, loss function, and optimizer
         if dataset == 'cifar10':
@@ -153,11 +158,15 @@ def main(rank=None, master_addr=None, master_port=None, world_size=None):
             for i, data in enumerate(trainloader, 0):
                 inputs, labels = data
                 inputs, labels = inputs.to(device), labels.to(device)
-                closuree = closure(inputs, labels, criterion, net, compute_grad=True, zero_grad=True)     
-                loss = optimizer.step(closuree) 
+                if epoch == 0:
+                    closuree = closure(inputs, labels, criterion, net, compute_grad=False, zero_grad=False)     
+                    loss = closuree()
+                else:
+                    closuree = closure(inputs, labels, criterion, net, compute_grad=True, zero_grad=True)     
+                    loss = optimizer.step(closuree) 
                 running_loss += loss if loss is not None else 0
                 count += 1
-                if i % 100 == 99: # Print every 100 epochs
+                if epoch > 0 and epoch % 5 == 0: # Print every 100 epochs
                     if dist.get_rank() == net.rank_list[-1][0] and optimizer_name.lower() == 'apts':
                         optimizer.display_avg_timers()
             running_loss = running_loss/count
@@ -183,7 +192,10 @@ def main(rank=None, master_addr=None, master_port=None, world_size=None):
             return accuracy
 
         # Train and test the model
-        for epoch in range(epochs):  # Number of epochs can be adjusted
+        for epoch in range(epochs + 1):  # Number of epochs can be adjusted
+            if rank == 0:
+                print(f"Starting epoch {epoch}")
+                
             epoch_start = time.time()
             net.zero_counters()
             if optimizer_name.lower() == 'apts':
@@ -207,6 +219,9 @@ def main(rank=None, master_addr=None, master_port=None, world_size=None):
 
         if dist.get_rank() == net.rank_list[-1][0]:
             np.savez(filename, **trial_data) # Save trial as an npz file
+            print(f"Saved trial data to {filename}")
+
+    torch.distributed.destroy_process_group()
     
 if __name__ == '__main__':
     try:
