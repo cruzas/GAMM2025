@@ -279,8 +279,9 @@ class TR(torch.optim.Optimizer):
         # Compute the norm of the gradient
         grad_norm2 = grad.norm(p=2)
         grad_norm = grad.norm(p=self.norm_type) if self.norm_type != 2 else grad_norm2 
+
         # Rescale the gradient to e at the edges of the trust region
-        grad = grad * (self.lr/grad_norm)
+        grad = grad * (self.lr/(grad_norm + 1e-9))
         # Make sure the loss decreases
         new_loss = torch.inf; c = 0
 
@@ -295,7 +296,10 @@ class TR(torch.optim.Optimizer):
             # Compute the ratio of the loss reduction       
             act_red = old_loss - new_loss # actual reduction
             pred_red = self.lr*grad_norm2 # predicted reduction (first order approximation of the loss function)
-            red_ratio = act_red / pred_red # reduction ratio
+            if pred_red < 1e-6:
+                red_ratio = float("inf")
+            else:
+                red_ratio = act_red / pred_red # reduction ratio
             
             # if dist.get_rank() == 0:
             #     print(f'old loss: {old_loss}, new loss: {new_loss}, act_red: {act_red}, pred_red: {pred_red}, red_ratio: {red_ratio}')

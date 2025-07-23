@@ -70,14 +70,14 @@ def main(rank=None, master_addr=None, master_port=None, world_size=None):
     
         # Assuming 'epochs' is already defined
         trial_data = {
-            'epoch_loss': np.zeros(epochs, dtype=np.float32),
-            'epoch_accuracy': np.zeros(epochs, dtype=np.float32),
-            'epoch_times': np.zeros(epochs, dtype=np.float64),  # Assuming times might need higher precision
-            'epoch_usage_times': np.zeros(epochs, dtype=np.float64),
-            'epoch_num_f_evals': np.zeros(epochs, dtype=np.int32),
-            'epoch_num_g_evals': np.zeros(epochs, dtype=np.int32),
-            'epoch_num_sf_evals': np.zeros(epochs, dtype=np.int32),
-            'epoch_num_sg_evals': np.zeros(epochs, dtype=np.int32)
+            'epoch_loss': np.zeros(epochs+1, dtype=np.float32),
+            'epoch_accuracy': np.zeros(epochs+1, dtype=np.float32),
+            'epoch_times': np.zeros(epochs+1, dtype=np.float64),  # Assuming times might need higher precision
+            'epoch_usage_times': np.zeros(epochs+1, dtype=np.float64),
+            'epoch_num_f_evals': np.zeros(epochs+1, dtype=np.int32),
+            'epoch_num_g_evals': np.zeros(epochs+1, dtype=np.int32),
+            'epoch_num_sf_evals': np.zeros(epochs+1, dtype=np.int32),
+            'epoch_num_sg_evals': np.zeros(epochs+1, dtype=np.int32)
         }
                 
         trainset, testset = get_dataset(dataset)
@@ -162,6 +162,8 @@ def main(rank=None, master_addr=None, master_port=None, world_size=None):
             running_loss = 0.0
             count = 0
             for i, data in enumerate(trainloader, 0):
+                # if dist.get_rank() == 0:
+                #     print(f"Starting batch {i}")
                 inputs, labels = data
                 inputs, labels = inputs.to(device), labels.to(device)
                 if epoch == 0:
@@ -172,9 +174,9 @@ def main(rank=None, master_addr=None, master_port=None, world_size=None):
                     loss = optimizer.step(closuree) 
                 running_loss += loss if loss is not None else 0
                 count += 1
-                if epoch > 0 and epoch % 5 == 0: # Print every 100 epochs
-                    if dist.get_rank() == net.rank_list[-1][0] and optimizer_name.lower() == 'apts':
-                        optimizer.display_avg_timers()
+                # if epoch > 0 and epoch % 10 == 0: # Print every 100 epochs
+                #     if dist.get_rank() == net.rank_list[-1][0] and optimizer_name.lower() == 'apts':
+                #         optimizer.display_avg_timers()
             running_loss = running_loss/count
             return running_loss
 
@@ -199,8 +201,8 @@ def main(rank=None, master_addr=None, master_port=None, world_size=None):
 
         # Train and test the model
         for epoch in range(epochs + 1):  # Number of epochs can be adjusted
-            if rank == 0:
-                print(f"Starting epoch {epoch}")
+            # if rank == 0:
+            #     print(f"Starting epoch {epoch}")
                 
             epoch_start = time.time()
             net.zero_counters()
