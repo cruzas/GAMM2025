@@ -111,6 +111,27 @@ class CNNPart2(nn.Module):
         x = F.relu(self.fc1(x))
         return x
 
+class CNNPart1a(nn.Module):
+    def __init__(self):
+        super(CNNPart1a, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3)
+        self.pool = nn.MaxPool2d(kernel_size=2)
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        print(f"CNN Part1a x.shape: {x.shape}")
+        return x
+ 
+class CNNPart1b(nn.Module):
+    def __init__(self):
+        super(CNNPart1b, self).__init__()
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
+        self.pool = nn.MaxPool2d(kernel_size=2)
+ 
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv2(x)))
+        print(f"CNN Part1b x.shape: {x.shape}")
+        return x
+
 class CNNPart3(nn.Module):
     def __init__(self):
         super(CNNPart3, self).__init__()
